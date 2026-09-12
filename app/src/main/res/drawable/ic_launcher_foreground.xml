@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Heroic Shield Crest Outline (Centered within 66dp safe zone: x: 21 to 87, y: 21 to 87) -->
+    <path
+        android:fillColor="#1E293B"
+        android:strokeColor="#4CC9F0"
+        android:strokeWidth="2.5"
+        android:pathData="M54,23 L79,32 C79,57 68,76 54,85 C40,76 29,57 29,32 Z" />
+
+    <!-- Open Book Pages Wings in Shield -->
+    <path
+        android:fillColor="#334CC9F0"
+        android:pathData="M54,42 C62,38 72,40 75,42 L75,66 C71,64 63,62 54,66 Z" />
+    <path
+        android:fillColor="#224CC9F0"
+        android:pathData="M54,42 C46,38 36,40 33,42 L33,66 C37,64 45,62 54,66 Z" />
+
+    <!-- Dynamic Electric Lightning Bolt - Hero Speed & Power -->
+    <path
+        android:pathData="M57,28 L43,50 L53,50 L47,78 L65,48 L55,48 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="43"
+                android:startY="28"
+                android:endX="65"
+                android:endY="78"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FFF3B0" />
+                <item android:offset="0.4" android:color="#FFD166" />
+                <item android:offset="1.0" android:color="#F77F00" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Glowing Core Star Accent -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,49 L55.5,52.5 L59,54 L55.5,55.5 L54,59 L52.5,55.5 L49,54 L52.5,52.5 Z" />
+</vector>

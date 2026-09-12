@@ -1,0 +1,6 @@
+{
+  "name": "VoltSage",
+  "description": "Superhero AI study companion that turns any link into concise summaries, key takeaways, smart notes, quizzes, spaced repetition review calendars, and collaborative study groups.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
