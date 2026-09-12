@@ -686,6 +686,7 @@ fun HomeScreen(
             isTesting = isTestingApi,
             testStatus = apiTestStatus,
             initialTab = modelDialogInitialTab,
+            isFirebaseActive = viewModel.isFirebaseAILogicActive,
             onDismiss = { showModelDialog = false }
         )
     }

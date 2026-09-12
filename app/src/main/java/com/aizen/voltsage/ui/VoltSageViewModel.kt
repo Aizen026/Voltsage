@@ -98,6 +98,9 @@ class VoltSageViewModel(application: Application) : AndroidViewModel(application
     private val _isTestingApi = MutableStateFlow(false)
     val isTestingApi: StateFlow<Boolean> = _isTestingApi.asStateFlow()
 
+    val isFirebaseAILogicActive: Boolean
+        get() = repository.isFirebaseAILogicActive()
+
     // Google Sign-In & Automatic Drive Backup Prompt on Startup
     private val _showGoogleSignInStartPrompt = MutableStateFlow(false)
     val showGoogleSignInStartPrompt: StateFlow<Boolean> = _showGoogleSignInStartPrompt.asStateFlow()
@@ -146,6 +149,7 @@ class VoltSageViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun hasConfiguredApiKey(): Boolean {
+        if (isFirebaseAILogicActive) return true
         val custom = _customApiKey.value.trim()
         if (custom.isNotEmpty()) return true
         val buildKey = runCatching { com.aizen.voltsage.BuildConfig.GEMINI_API_KEY }.getOrNull()?.trim() ?: ""

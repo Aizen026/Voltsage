@@ -344,7 +344,11 @@ class VoltSageRepository(private val context: Context) {
     }
 
     suspend fun testGeminiConnection(apiKey: String, modelId: String): Result<String> {
-        return geminiService.testApiKey(apiKey, modelId)
+        return geminiService.testConnection(apiKey.takeIf { it.isNotBlank() }, modelId)
+    }
+
+    fun isFirebaseAILogicActive(): Boolean {
+        return geminiService.isFirebaseReady()
     }
 
     // --- Seed Initial Starter Content ---

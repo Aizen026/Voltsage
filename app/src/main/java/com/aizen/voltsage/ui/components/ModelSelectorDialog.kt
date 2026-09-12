@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
@@ -80,6 +81,7 @@ fun ModelSelectorDialog(
     isTesting: Boolean,
     testStatus: String?,
     initialTab: Int = 0,
+    isFirebaseActive: Boolean = false,
     onDismiss: () -> Unit
 ) {
     var apiKeyInput by remember { mutableStateOf(currentApiKey) }
@@ -280,9 +282,74 @@ fun ModelSelectorDialog(
                             }
                         }
                         1 -> {
-                            // API Key Configuration
+                            // Firebase AI Logic SDK & Gemini API Key
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isFirebaseActive) SuccessGreen.copy(alpha = 0.5f) else VoltCyan.copy(alpha = 0.3f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isFirebaseActive) SuccessGreen.copy(alpha = 0.08f) else VoltBlue.copy(alpha = 0.12f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Bolt,
+                                                contentDescription = null,
+                                                tint = VoltAmber,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Firebase AI Logic SDK",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(
+                                                    if (isFirebaseActive) SuccessGreen.copy(alpha = 0.2f)
+                                                    else VoltCyan.copy(alpha = 0.15f)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isFirebaseActive) "SDK Active" else "firebase-ai Ready",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isFirebaseActive) SuccessGreen else VoltCyan
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Official Firebase AI Logic SDK (BoM v34.17.0) with App Check debug protection. Package: com.aizen.voltsage",
+                                        fontSize = 10.sp,
+                                        lineHeight = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
                             Text(
-                                text = "GEMINI API KEY",
+                                text = "GEMINI API KEY (DIRECT / FALLBACK)",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = VoltCyan,
@@ -290,7 +357,7 @@ fun ModelSelectorDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Enter your Google AI Studio API key to power real-time video summaries, notes synthesis, and interactive quizzes.",
+                                text = "Optionally enter a direct Google AI Studio API key. If provided, it can be used directly or as a fallback for Firebase AI Logic.",
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -337,7 +404,7 @@ fun ModelSelectorDialog(
 
                             OutlinedButton(
                                 onClick = onTestApiKey,
-                                enabled = !isTesting && apiKeyInput.isNotBlank(),
+                                enabled = !isTesting && (apiKeyInput.isNotBlank() || isFirebaseActive),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -346,11 +413,14 @@ fun ModelSelectorDialog(
                                 if (isTesting) {
                                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Verifying Key...", fontSize = 11.sp)
+                                    Text("Verifying Connection...", fontSize = 11.sp)
                                 } else {
                                     Icon(imageVector = Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Test Connection", fontSize = 11.sp)
+                                    Text(
+                                        if (isFirebaseActive) "Test Firebase AI Connection" else "Test Connection",
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
 

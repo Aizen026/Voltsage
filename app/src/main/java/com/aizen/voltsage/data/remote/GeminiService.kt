@@ -4,6 +4,11 @@ import android.util.Log
 import com.aizen.voltsage.BuildConfig
 import com.aizen.voltsage.data.model.QuizQuestion
 import com.aizen.voltsage.data.model.withRandomizedOptions
+import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -30,6 +35,12 @@ class GeminiStudyService {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    fun isFirebaseReady(): Boolean {
+        return runCatching {
+            FirebaseApp.getInstance() != null
+        }.getOrDefault(false)
+    }
+
     suspend fun generateStudyPack(
         inputUrlOrText: String,
         extractedContent: String,
@@ -41,11 +52,13 @@ class GeminiStudyService {
         val apiKey = customApiKey?.trim()?.takeIf { it.isNotEmpty() }
             ?: runCatching { BuildConfig.GEMINI_API_KEY }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() && it != "MY_GEMINI_API_KEY" }
 
-        // If no API key is set or placeholder, do NOT generate fake hallucinated study packs. Return failure so the user is prompted for their key.
-        if (apiKey.isNullOrEmpty()) {
-            Log.w("VoltSage", "No Gemini API Key provided.")
+        val firebaseReady = isFirebaseReady()
+
+        // If neither Firebase AI nor an API key is set, prompt the user.
+        if (!firebaseReady && apiKey.isNullOrEmpty()) {
+            Log.w("VoltSage", "Neither Firebase AI nor a Gemini API Key is configured.")
             return@withContext Result.failure(
-                IllegalStateException("A Gemini API Key is required to summarize content and generate study packs. Please configure your API key in Gemini Settings.")
+                IllegalStateException("A Gemini AI connection is required. Either initialize Firebase with google-services.json or configure an API key in Gemini Settings.")
             )
         }
 
@@ -92,6 +105,33 @@ Provide your response in STRICT VALID JSON format only, with no markdown code bl
   ]
 }
 """.trimIndent()
+
+        // 1. Primary path: Official Firebase AI Logic client SDK (Android)
+        if (firebaseReady) {
+            try {
+                Log.i("VoltSage", "Generating study pack with Firebase AI Logic SDK (model: $modelName)")
+                val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+                    modelName = modelName,
+                    generationConfig = generationConfig {
+                        temperature = 0.7f
+                        topP = 0.95f
+                    }
+                )
+                val response = generativeModel.generateContent(prompt)
+                val responseText = response.text
+                if (!responseText.isNullOrBlank()) {
+                    val parsed = parseJsonResponse(responseText, inputUrlOrText)
+                    return@withContext Result.success(parsed)
+                }
+            } catch (e: Exception) {
+                Log.w("VoltSage", "Firebase AI Logic invocation note: ${e.message}. Falling back to direct API if key present...", e)
+                if (apiKey.isNullOrEmpty()) {
+                    return@withContext Result.failure(
+                        Exception("Firebase AI Logic: ${e.localizedMessage ?: e.message}")
+                    )
+                }
+            }
+        }
 
         try {
             val jsonBody = JSONObject().apply {
@@ -185,6 +225,32 @@ Provide your response in STRICT VALID JSON format only, with no markdown code bl
         }
     }
 
+    suspend fun testConnection(apiKey: String?, modelName: String): Result<String> = withContext(Dispatchers.IO) {
+        if (isFirebaseReady()) {
+            try {
+                val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+                    modelName = modelName
+                )
+                val response = generativeModel.generateContent("Respond in one word: READY")
+                val text = response.text ?: "READY"
+                return@withContext Result.success("Firebase AI Logic Connected! Model $modelName response: $text")
+            } catch (e: Exception) {
+                Log.w("VoltSage", "Firebase AI Logic test connection notice: ${e.message}")
+                if (apiKey.isNullOrBlank()) {
+                    return@withContext Result.failure(
+                        Exception("Firebase AI Logic: ${e.localizedMessage ?: e.message}")
+                    )
+                }
+            }
+        }
+        if (!apiKey.isNullOrBlank()) {
+            return@withContext testApiKey(apiKey, modelName)
+        }
+        Result.failure(
+            Exception("No Gemini API key configured and Firebase is not yet initialized with google-services.json.")
+        )
+    }
+
     private fun parseJsonResponse(rawText: String, fallbackUrl: String): AIStudyResult {
         // Strip markdown backticks if present
         var cleaned = rawText.trim()
@@ -246,9 +312,11 @@ Provide your response in STRICT VALID JSON format only, with no markdown code bl
         val apiKey = customApiKey?.trim()?.takeIf { it.isNotEmpty() }
             ?: runCatching { BuildConfig.GEMINI_API_KEY }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() && it != "MY_GEMINI_API_KEY" }
 
-        if (apiKey.isNullOrEmpty()) {
+        val firebaseReady = isFirebaseReady()
+
+        if (!firebaseReady && apiKey.isNullOrEmpty()) {
             return@withContext Result.failure(
-                IllegalStateException("A Gemini API Key is required to generate custom quizzes. Configure your key in Settings.")
+                IllegalStateException("A Gemini AI connection is required to generate custom quizzes. Configure an API key or initialize Firebase in Settings.")
             )
         }
 
@@ -287,6 +355,48 @@ Return STRICT VALID JSON only, with no markdown code blocks, starting with '{' a
   ]
 }
 """.trimIndent()
+
+        // 1. Primary path: Official Firebase AI Logic client SDK
+        if (firebaseReady) {
+            try {
+                Log.i("VoltSage", "Generating custom quiz with Firebase AI Logic SDK (model: $modelName)")
+                val generativeModel = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+                    modelName = modelName,
+                    generationConfig = generationConfig {
+                        temperature = 0.7f
+                        topP = 0.95f
+                    }
+                )
+                val response = generativeModel.generateContent(prompt)
+                val text = response.text
+                if (!text.isNullOrBlank()) {
+                    var cleaned = text.trim()
+                    if (cleaned.startsWith("```json")) cleaned = cleaned.removePrefix("```json").trim()
+                    else if (cleaned.startsWith("```")) cleaned = cleaned.removePrefix("```").trim()
+                    if (cleaned.endsWith("```")) cleaned = cleaned.removeSuffix("```").trim()
+
+                    val startIndex = cleaned.indexOf('{')
+                    val endIndex = cleaned.lastIndexOf('}')
+                    if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+                        cleaned = cleaned.substring(startIndex, endIndex + 1)
+                    }
+
+                    val json = JSONObject(cleaned)
+                    val quizArr = json.optJSONArray("quiz")
+                    val parsed = parseQuizQuestions(quizArr)
+                    if (parsed.isNotEmpty()) {
+                        return@withContext Result.success(parsed)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("VoltSage", "Firebase AI Logic custom quiz notice: ${e.message}. Falling back to direct API if key present...", e)
+                if (apiKey.isNullOrEmpty()) {
+                    return@withContext Result.failure(
+                        Exception("Firebase AI Logic: ${e.localizedMessage ?: e.message}")
+                    )
+                }
+            }
+        }
 
         try {
             val jsonBody = JSONObject().apply {

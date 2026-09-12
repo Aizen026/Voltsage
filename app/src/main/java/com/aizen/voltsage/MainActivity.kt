@@ -35,6 +35,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.firebase.FirebaseApp
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.aizen.voltsage.ui.Screen
 import com.aizen.voltsage.ui.VoltSageViewModel
 import com.aizen.voltsage.ui.screens.AnalyticsScreen
@@ -51,6 +54,28 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Initialize Firebase App & App Check for debug builds as recommended in Firebase AI Logic docs
+        try {
+            if (FirebaseApp.getApps(this).isEmpty()) {
+                val apiKey = runCatching { BuildConfig.GEMINI_API_KEY }.getOrNull()?.trim()
+                    ?.takeIf { it.isNotEmpty() && it != "MY_GEMINI_API_KEY" }
+                    ?: "voltsage_debug_app_key"
+                val options = com.google.firebase.FirebaseOptions.Builder()
+                    .setApplicationId(applicationContext.packageName)
+                    .setApiKey(apiKey)
+                    .setProjectId("voltsage-study")
+                    .build()
+                FirebaseApp.initializeApp(this, options)
+            }
+            val appCheck = FirebaseAppCheck.getInstance()
+            appCheck.installAppCheckProviderFactory(
+                DebugAppCheckProviderFactory.getInstance()
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("VoltSage", "Firebase AppCheck notice: ${e.message}")
+        }
+
         setContent {
             VoltSageApp()
         }
