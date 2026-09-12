@@ -55,23 +55,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Initialize Firebase App & App Check for debug builds as recommended in Firebase AI Logic docs
+        // Initialize Firebase App Check if a valid Firebase configuration (google-services.json) exists
         try {
-            if (FirebaseApp.getApps(this).isEmpty()) {
-                val apiKey = runCatching { BuildConfig.GEMINI_API_KEY }.getOrNull()?.trim()
-                    ?.takeIf { it.isNotEmpty() && it != "MY_GEMINI_API_KEY" }
-                    ?: "voltsage_debug_app_key"
-                val options = com.google.firebase.FirebaseOptions.Builder()
-                    .setApplicationId(applicationContext.packageName)
-                    .setApiKey(apiKey)
-                    .setProjectId("voltsage-study")
-                    .build()
-                FirebaseApp.initializeApp(this, options)
+            if (FirebaseApp.getApps(this).isNotEmpty()) {
+                val appCheck = FirebaseAppCheck.getInstance()
+                val providerFactory = if (BuildConfig.DEBUG) {
+                    DebugAppCheckProviderFactory.getInstance()
+                } else {
+                    PlayIntegrityAppCheckProviderFactory.getInstance()
+                }
+                appCheck.installAppCheckProviderFactory(providerFactory)
             }
-            val appCheck = FirebaseAppCheck.getInstance()
-            appCheck.installAppCheckProviderFactory(
-                DebugAppCheckProviderFactory.getInstance()
-            )
         } catch (e: Exception) {
             android.util.Log.w("VoltSage", "Firebase AppCheck notice: ${e.message}")
         }
