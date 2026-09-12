@@ -485,6 +485,11 @@ class VoltSageViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // --- Google Drive Auto Backup ---
+    fun triggerAutoBackup() {
+        com.aizen.voltsage.data.remote.AutoBackupService.triggerImmediateBackup(getApplication())
+    }
+
     // --- Stats Getters ---
     fun getStreakDays(): Int = repository.getStreakDays()
     fun getTotalStudyMinutes(): Int = repository.getTotalStudyMinutes()

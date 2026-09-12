@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
             android.util.Log.w("VoltSage", "Firebase AppCheck notice: ${e.message}")
         }
 
+        // Schedule automatic periodic Google Drive backups with pruning
+        com.aizen.voltsage.data.remote.AutoBackupService.schedulePeriodicBackup(this)
+
         setContent {
             VoltSageApp()
         }

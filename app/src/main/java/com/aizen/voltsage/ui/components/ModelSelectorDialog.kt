@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -280,6 +281,40 @@ fun ModelSelectorDialog(
                                     }
                                 }
                             }
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Text(
+                                text = "CUSTOM MODEL",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = VoltCyan,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            var customInputText by remember { 
+                                mutableStateOf(if (AvailableGeminiModels.none { it.id == currentModelId }) currentModelId else "") 
+                            }
+                            
+                            OutlinedTextField(
+                                value = customInputText,
+                                onValueChange = { 
+                                    customInputText = it
+                                    if (it.isNotBlank()) {
+                                        onModelSelected(it)
+                                    }
+                                },
+                                label = { Text("Model ID (e.g. gemini-1.5-pro)", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = VoltCyan,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
+                            )
                         }
                         1 -> {
                             // Firebase AI Logic SDK & Gemini API Key
