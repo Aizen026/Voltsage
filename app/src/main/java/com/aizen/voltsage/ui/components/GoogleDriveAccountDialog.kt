@@ -87,7 +87,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-const val APP_PACKAGE_NAME = "com.aistudio.voltsage.kqlvrt"
+const val APP_PACKAGE_NAME = "com.aizen.voltsage"
 const val APP_CERT_SHA1 = "0A:89:60:AD:EE:1D:2F:6F:5F:B6:83:2B:CD:6F:D8:3B:13:B9:76:C9"
 const val APP_CERT_SHA256 = "98:F4:AE:48:BD:30:11:48:E2:FC:6A:43:6C:7D:B0:2F:A6:40:1D:2B:7E:88:5C:13:5C:C6:4D:D6:97:83:84:5A"
 
@@ -618,9 +618,10 @@ fun GoogleDriveAccountDialog(
                                         .background(MaterialTheme.colorScheme.surface)
                                         .padding(10.dp)
                                 ) {
+                                    val currentPackageName = context.packageName.ifEmpty { APP_PACKAGE_NAME }
                                     Column {
                                         Text("Package Name:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VoltCyan)
-                                        Text(APP_PACKAGE_NAME, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(currentPackageName, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(modifier = Modifier.height(6.dp))
                                         Text("SHA-1 Fingerprint:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VoltCyan)
                                         Text(APP_CERT_SHA1, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
@@ -635,7 +636,8 @@ fun GoogleDriveAccountDialog(
                                 OutlinedButton(
                                     onClick = {
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                        val text = "Package: $APP_PACKAGE_NAME\nSHA-1: $APP_CERT_SHA1\nSHA-256: $APP_CERT_SHA256"
+                                        val currentPackageName = context.packageName.ifEmpty { APP_PACKAGE_NAME }
+                                        val text = "Package: $currentPackageName\nSHA-1: $APP_CERT_SHA1\nSHA-256: $APP_CERT_SHA256"
                                         clipboard?.setPrimaryClip(ClipData.newPlainText("VoltSage Credentials", text))
                                         Toast.makeText(context, "Copied OAuth details to clipboard!", Toast.LENGTH_SHORT).show()
                                     },
