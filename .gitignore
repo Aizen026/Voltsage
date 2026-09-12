@@ -17,3 +17,4 @@ local.properties
 .env
 debug.keystore
 firebase-applet-config.json
+app/google-services.json
