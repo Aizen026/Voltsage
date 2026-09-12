@@ -153,7 +153,20 @@ fun GoogleDriveAccountDialog(
         try {
             val account = task.getResult(ApiException::class.java)
             accountInfo = driveManager.getAccountInfo()
-            statusMessage = "Signed in as ${account.email}"
+            statusMessage = "Signed in as ${account.email}. Starting auto-backup..."
+            
+            // Automatically trigger a backup after signing in
+            scope.launch {
+                isBackingUp = true
+                val res = driveManager.uploadBackupToDrive()
+                isBackingUp = false
+                res.onSuccess {
+                    accountInfo = driveManager.getAccountInfo()
+                    statusMessage = "Auto-backup complete: $it"
+                }.onFailure {
+                    statusMessage = "Auto-backup failed: ${it.localizedMessage}"
+                }
+            }
         } catch (e: Exception) {
             statusMessage = extractGoogleSignInError(
                 result.data,
@@ -357,7 +370,7 @@ fun GoogleDriveAccountDialog(
 
                             Button(
                                 onClick = {
-                                    val client = driveManager.getGoogleSignInClient(requestDriveScope = false)
+                                    val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
                                     signInLauncher.launch(client.signInIntent)
                                 },
                                 modifier = Modifier

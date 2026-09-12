@@ -49,9 +49,11 @@ class GoogleDriveBackupManager(private val context: Context) {
     private val oauthScopeString = "oauth2:https://www.googleapis.com/auth/drive.file"
 
     companion object {
-        private const val BACKUP_FILENAME = "voltsage_study_backup.json"
+        private const val BACKUP_FILENAME_PREFIX = "voltsage_study_backup_"
+        private const val BACKUP_FOLDER_NAME = "VoltSage Backups"
         private const val KEY_LAST_BACKUP = "last_backup_time"
         private const val TAG = "DriveBackup"
+        private const val MAX_BACKUPS = 5
     }
 
     /**
@@ -173,7 +175,8 @@ class GoogleDriveBackupManager(private val context: Context) {
     }
 
     /**
-     * Uploads or updates the backup file directly into the user's personal Google Drive.
+     * Uploads a new backup file into a specific folder in the user's personal Google Drive,
+     * maintaining only the most recent MAX_BACKUPS.
      */
     suspend fun uploadBackupToDrive(): Result<String> = withContext(Dispatchers.IO) {
         val token = getAuthToken()
@@ -181,49 +184,42 @@ class GoogleDriveBackupManager(private val context: Context) {
 
         try {
             val jsonContent = generateBackupJson()
-            val existingFileId = findExistingBackupFileId(token)
+            
+            // 1. Ensure folder exists
+            val folderId = getOrCreateFolderId(token)
+                ?: return@withContext Result.failure(IOException("Failed to create or find backup folder in Drive."))
 
-            if (existingFileId != null) {
-                // Update existing file content
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val requestBody = jsonContent.toRequestBody(mediaType)
-                val updateRequest = Request.Builder()
-                    .url("https://www.googleapis.com/upload/drive/v3/files/$existingFileId?uploadType=media")
-                    .addHeader("Authorization", "Bearer $token")
-                    .patch(requestBody)
-                    .build()
+            // 2. Upload new backup
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "$BACKUP_FILENAME_PREFIX$timestamp.json"
 
-                val resp = client.newCall(updateRequest).execute()
-                if (!resp.isSuccessful) {
-                    val err = resp.body?.string() ?: resp.message
-                    return@withContext Result.failure(IOException("Failed to update Drive backup: $err"))
-                }
-            } else {
-                // Create multipart upload
-                val metadataJson = JSONObject().apply {
-                    put("name", BACKUP_FILENAME)
-                    put("description", "VoltSage Academic Study & Quiz Backup")
-                    put("mimeType", "application/json")
-                }.toString()
+            val metadataJson = JSONObject().apply {
+                put("name", fileName)
+                put("description", "VoltSage Academic Study & Quiz Backup")
+                put("mimeType", "application/json")
+                put("parents", JSONArray().put(folderId))
+            }.toString()
 
-                val multipartBody = MultipartBody.Builder()
-                    .setType(MultipartBody.FORM)
-                    .addFormDataPart("metadata", null, metadataJson.toRequestBody("application/json; charset=UTF-8".toMediaType()))
-                    .addFormDataPart("file", BACKUP_FILENAME, jsonContent.toRequestBody("application/json; charset=UTF-8".toMediaType()))
-                    .build()
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("metadata", null, metadataJson.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+                .addFormDataPart("file", fileName, jsonContent.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+                .build()
 
-                val createRequest = Request.Builder()
-                    .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
-                    .addHeader("Authorization", "Bearer $token")
-                    .post(multipartBody)
-                    .build()
+            val createRequest = Request.Builder()
+                .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
+                .addHeader("Authorization", "Bearer $token")
+                .post(multipartBody)
+                .build()
 
-                val resp = client.newCall(createRequest).execute()
-                if (!resp.isSuccessful) {
-                    val err = resp.body?.string() ?: resp.message
-                    return@withContext Result.failure(IOException("Failed to create Drive backup: $err"))
-                }
+            val resp = client.newCall(createRequest).execute()
+            if (!resp.isSuccessful) {
+                val err = resp.body?.string() ?: resp.message
+                return@withContext Result.failure(IOException("Failed to create Drive backup: $err"))
             }
+
+            // 3. Cleanup old backups
+            cleanupOldBackups(token, folderId)
 
             val now = System.currentTimeMillis()
             prefs.edit().putLong(KEY_LAST_BACKUP, now).apply()
@@ -243,8 +239,8 @@ class GoogleDriveBackupManager(private val context: Context) {
             ?: return@withContext Result.failure(Exception("Google Sign-In required or Drive permission missing."))
 
         try {
-            val fileId = findExistingBackupFileId(token)
-                ?: return@withContext Result.failure(Exception("No VoltSage backup file ($BACKUP_FILENAME) found in Google Drive."))
+            val fileId = findLatestBackupFileId(token)
+                ?: return@withContext Result.failure(Exception("No VoltSage backup file found in Google Drive."))
 
             val downloadRequest = Request.Builder()
                 .url("https://www.googleapis.com/drive/v3/files/$fileId?alt=media")
@@ -368,15 +364,16 @@ class GoogleDriveBackupManager(private val context: Context) {
         }
     }
 
-    private suspend fun findExistingBackupFileId(token: String): String? = withContext(Dispatchers.IO) {
-        val query = "name = '$BACKUP_FILENAME' and trashed = false"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&fields=files(id,name)"
+    private suspend fun getOrCreateFolderId(token: String): String? = withContext(Dispatchers.IO) {
+        val query = "name = '$BACKUP_FOLDER_NAME' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&fields=files(id)"
+        
         val req = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Bearer $token")
             .get()
             .build()
-
+            
         try {
             val resp = client.newCall(req).execute()
             if (resp.isSuccessful) {
@@ -388,7 +385,90 @@ class GoogleDriveBackupManager(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed finding backup file in Drive", e)
+            Log.w(TAG, "Failed finding backup folder in Drive", e)
+        }
+        
+        // Create folder
+        val metadataJson = JSONObject().apply {
+            put("name", BACKUP_FOLDER_NAME)
+            put("mimeType", "application/vnd.google-apps.folder")
+        }.toString()
+        
+        val createReq = Request.Builder()
+            .url("https://www.googleapis.com/drive/v3/files")
+            .addHeader("Authorization", "Bearer $token")
+            .post(metadataJson.toRequestBody("application/json; charset=UTF-8".toMediaType()))
+            .build()
+            
+        try {
+            val createResp = client.newCall(createReq).execute()
+            if (createResp.isSuccessful) {
+                val body = createResp.body?.string() ?: return@withContext null
+                return@withContext JSONObject(body).getString("id")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed creating backup folder in Drive", e)
+        }
+        null
+    }
+
+    private suspend fun cleanupOldBackups(token: String, folderId: String) = withContext(Dispatchers.IO) {
+        val query = "'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&orderBy=createdTime&fields=files(id,createdTime)"
+        
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $token")
+            .get()
+            .build()
+            
+        try {
+            val resp = client.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val body = resp.body?.string() ?: return@withContext
+                val files = JSONObject(body).optJSONArray("files") ?: return@withContext
+                
+                if (files.length() > MAX_BACKUPS) {
+                    val numToDelete = files.length() - MAX_BACKUPS
+                    for (i in 0 until numToDelete) {
+                        val fileId = files.getJSONObject(i).getString("id")
+                        val deleteReq = Request.Builder()
+                            .url("https://www.googleapis.com/drive/v3/files/$fileId")
+                            .addHeader("Authorization", "Bearer $token")
+                            .delete()
+                            .build()
+                        client.newCall(deleteReq).execute()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed cleaning up old backups", e)
+        }
+    }
+
+    private suspend fun findLatestBackupFileId(token: String): String? = withContext(Dispatchers.IO) {
+        val folderId = getOrCreateFolderId(token) ?: return@withContext null
+        val query = "'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&orderBy=createdTime desc&fields=files(id,name)"
+        
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $token")
+            .get()
+            .build()
+            
+        try {
+            val resp = client.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val body = resp.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+                val files = json.optJSONArray("files")
+                if (files != null && files.length() > 0) {
+                    return@withContext files.getJSONObject(0).getString("id")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed finding latest backup file in Drive", e)
         }
         null
     }

@@ -460,6 +460,12 @@ class VoltSageViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun deleteReview(reviewId: Long) {
+        viewModelScope.launch {
+            repository.deleteReview(reviewId)
+        }
+    }
+
     // --- Study Groups ---
     fun createGroup(name: String, subject: String, desc: String) {
         viewModelScope.launch {

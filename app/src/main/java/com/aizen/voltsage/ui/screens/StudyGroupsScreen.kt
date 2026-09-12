@@ -141,7 +141,14 @@ fun StudyGroupsScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
-                    onClick = { showCreateDialog = true },
+                    onClick = {
+                        if (com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context) != null) {
+                            showCreateDialog = true
+                        } else {
+                            showAccountDialog = true
+                            Toast.makeText(context, "Please sign in to Google to use Study Groups", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("create_group_button"),
@@ -154,7 +161,14 @@ fun StudyGroupsScreen(
                 }
 
                 OutlinedButton(
-                    onClick = { showJoinDialog = true },
+                    onClick = {
+                        if (com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context) != null) {
+                            showJoinDialog = true
+                        } else {
+                            showAccountDialog = true
+                            Toast.makeText(context, "Please sign in to Google to use Study Groups", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("join_group_button"),

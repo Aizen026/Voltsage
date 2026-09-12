@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -82,15 +85,17 @@ fun CalendarScreen(
 
     var showAddDialog by remember { mutableStateOf(false) }
 
-    // Generate list of 14 days around today
+    // Generate list of 30 days around today (14 days past, today, 15 days future)
     val daysList = remember {
         val list = mutableListOf<Triple<String, String, String>>() // YYYY-MM-DD, DayName, DayNum
         val cal = Calendar.getInstance()
+        cal.add(Calendar.DAY_OF_YEAR, -14)
+        
         val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val sdfDayName = SimpleDateFormat("EEE", Locale.getDefault())
         val sdfDayNum = SimpleDateFormat("dd", Locale.getDefault())
 
-        for (i in 0..13) {
+        for (i in 0..29) {
             val dateStr = sdfDate.format(cal.time)
             val dayName = sdfDayName.format(cal.time)
             val dayNum = sdfDayNum.format(cal.time)
@@ -184,8 +189,13 @@ fun CalendarScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Date Strip (14 days)
+                // Date Strip (30 days)
+                val listState = rememberLazyListState()
+                LaunchedEffect(Unit) {
+                    listState.scrollToItem(14)
+                }
                 LazyRow(
+                    state = listState,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(daysList) { (dateStr, dayName, dayNum) ->
@@ -394,21 +404,39 @@ fun CalendarScreen(
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
-                                Button(
-                                    onClick = {
-                                        if (review.reviewType.equals("QUIZ", ignoreCase = true)) {
-                                            onLaunchQuiz(review.studyPackId)
-                                        } else {
-                                            onLaunchNotes(review.studyPackId)
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = VoltBlue),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = VoltAmber, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text("Start", fontSize = 11.sp, color = Color.White)
+                                    Button(
+                                        onClick = {
+                                            if (review.reviewType.equals("QUIZ", ignoreCase = true)) {
+                                                onLaunchQuiz(review.studyPackId)
+                                            } else {
+                                                onLaunchNotes(review.studyPackId)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = VoltBlue),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = VoltAmber, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text("Start", fontSize = 11.sp, color = Color.White)
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    
+                                    IconButton(
+                                        onClick = { viewModel.deleteReview(review.id) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete Review",
+                                            tint = VoltFlame,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

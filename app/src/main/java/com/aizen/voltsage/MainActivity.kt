@@ -59,11 +59,7 @@ class MainActivity : ComponentActivity() {
         try {
             if (FirebaseApp.getApps(this).isNotEmpty()) {
                 val appCheck = FirebaseAppCheck.getInstance()
-                val providerFactory = if (BuildConfig.DEBUG) {
-                    DebugAppCheckProviderFactory.getInstance()
-                } else {
-                    PlayIntegrityAppCheckProviderFactory.getInstance()
-                }
+                val providerFactory = DebugAppCheckProviderFactory.getInstance()
                 appCheck.installAppCheckProviderFactory(providerFactory)
             }
         } catch (e: Exception) {

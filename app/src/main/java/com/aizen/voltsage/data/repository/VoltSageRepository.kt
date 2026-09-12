@@ -303,6 +303,10 @@ class VoltSageRepository(private val context: Context) {
         reviewDao.insertReview(review)
     }
 
+    suspend fun deleteReview(id: Long) = withContext(Dispatchers.IO) {
+        reviewDao.deleteReviewById(id)
+    }
+
     // --- Collaborative Study Groups ---
     val allGroups: Flow<List<StudyGroup>> = groupDao.getAllGroups().map { list ->
         list.map { it.toDomain() }
@@ -323,20 +327,8 @@ class VoltSageRepository(private val context: Context) {
     suspend fun joinStudyGroup(code: String): Boolean = withContext(Dispatchers.IO) {
         val cleanCode = code.trim().uppercase()
         val existing = groupDao.getAllGroups().firstOrNull()?.find { it.code.equals(cleanCode, ignoreCase = true) }
-        if (existing != null) {
-            true
-        } else {
-            // Join a group via invite code
-            val newGroup = StudyGroupEntity(
-                name = "Study Squad [$cleanCode]",
-                subject = "General Academic",
-                description = "Collaborative peer group joined via invite code $cleanCode.",
-                code = cleanCode,
-                activeChallenge = "Complete scheduled active recall quizzes"
-            )
-            groupDao.insertGroup(newGroup)
-            true
-        }
+        
+        return@withContext existing != null
     }
 
     suspend fun deleteStudyGroup(id: Long) = withContext(Dispatchers.IO) {
