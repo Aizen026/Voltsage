@@ -143,7 +143,6 @@ fun GoogleDriveAccountDialog(
     var isRestoring by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
-    var showDevInfo by remember { mutableStateOf(false) }
 
     // Google Sign-In Launcher
     val signInLauncher = rememberLauncherForActivityResult(
@@ -565,106 +564,7 @@ fun GoogleDriveAccountDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
 
-                // Collapsible Google Cloud OAuth Setup Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDevInfo = !showDevInfo },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.HelpOutline,
-                                    contentDescription = null,
-                                    tint = VoltAmber,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "OAuth & Fingerprint Details",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Icon(
-                                imageVector = if (showDevInfo) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        AnimatedVisibility(visible = showDevInfo) {
-                            Column(modifier = Modifier.padding(top = 10.dp)) {
-                                Text(
-                                    text = "Why does Google Sign-In fail without configuration?",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Google Play Services requires every Android app using Google Sign-In to be registered in Google Cloud Console with its package name and SHA-1 certificate fingerprint.",
-                                    fontSize = 10.sp,
-                                    lineHeight = 14.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.surface)
-                                        .padding(10.dp)
-                                ) {
-                                    val currentPackageName = context.packageName.ifEmpty { APP_PACKAGE_NAME }
-                                    Column {
-                                        Text("Package Name:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VoltCyan)
-                                        Text(currentPackageName, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text("SHA-1 Fingerprint:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VoltCyan)
-                                        Text(APP_CERT_SHA1, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text("SHA-256 Fingerprint:", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = VoltCyan)
-                                        Text(APP_CERT_SHA256, fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                OutlinedButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                        val currentPackageName = context.packageName.ifEmpty { APP_PACKAGE_NAME }
-                                        val text = "Package: $currentPackageName\nSHA-1: $APP_CERT_SHA1\nSHA-256: $APP_CERT_SHA256"
-                                        clipboard?.setPrimaryClip(ClipData.newPlainText("VoltSage Credentials", text))
-                                        Toast.makeText(context, "Copied OAuth details to clipboard!", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Copy Details to Clipboard", fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(18.dp))
 
