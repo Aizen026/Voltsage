@@ -30,6 +30,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+class DrivePermissionException(message: String) : Exception(message)
+
 data class DriveAccountInfo(
     val isSignedIn: Boolean,
     val email: String?,
@@ -96,12 +98,47 @@ class GoogleDriveBackupManager(private val context: Context) {
         )
     }
 
+    fun clearCachedToken(token: String) {
+        try {
+            GoogleAuthUtil.clearToken(context, token)
+            Log.d(TAG, "Cleared cached Google OAuth token")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear token", e)
+        }
+    }
+
+    private fun parseDriveErrorMessage(code: Int, body: String): String {
+        try {
+            val root = JSONObject(body)
+            val errorObj = root.optJSONObject("error")
+            if (errorObj != null) {
+                val message = errorObj.optString("message")
+                if (message.contains("insufficient", ignoreCase = true) || message.contains("scope", ignoreCase = true)) {
+                    return "Google Drive permission required. Please tap 'Authorize' to grant Drive file access."
+                }
+                if (message.contains("disabled", ignoreCase = true) || message.contains("not been used", ignoreCase = true)) {
+                    return "Google Drive API is disabled in Cloud Console for this project. Please enable Google Drive API."
+                }
+                if (message.isNotBlank()) {
+                    return "Google Drive error ($code): $message"
+                }
+            }
+        } catch (_: Exception) {}
+        return "Google Drive error ($code): ${body.take(150)}"
+    }
+
+    private fun encodeQueryParam(value: String): String {
+        return java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    }
+
     private suspend fun getAuthToken(): String? = withContext(Dispatchers.IO) {
         val account = GoogleSignIn.getLastSignedInAccount(context) ?: return@withContext null
+        val gAccount = account.account ?: account.email?.let { android.accounts.Account(it, "com.google") }
+            ?: return@withContext null
         try {
-            GoogleAuthUtil.getToken(context, account.account ?: return@withContext null, oauthScopeString)
+            GoogleAuthUtil.getToken(context, gAccount, oauthScopeString)
         } catch (e: Exception) {
-            Log.e(TAG, "Error obtaining Google Drive OAuth token", e)
+            Log.e(TAG, "Error obtaining Google Drive OAuth token: ${e.message}", e)
             null
         }
     }
@@ -175,19 +212,25 @@ class GoogleDriveBackupManager(private val context: Context) {
     }
 
     /**
-     * Uploads a new backup file into a specific folder in the user's personal Google Drive,
-     * maintaining only the most recent MAX_BACKUPS.
+     * Uploads a new backup file into the user's personal Google Drive under "VoltSage Backups"
+     * (or root Drive if folder is unavailable), maintaining only the most recent MAX_BACKUPS.
      */
     suspend fun uploadBackupToDrive(): Result<String> = withContext(Dispatchers.IO) {
+        val account = getLastSignedInAccount()
+            ?: return@withContext Result.failure(Exception("Google Sign-In required. Please connect your Google account."))
+
+        if (!hasDrivePermission(account)) {
+            return@withContext Result.failure(DrivePermissionException("Google Drive permission required. Please authorize Google Drive access to enable backups."))
+        }
+
         val token = getAuthToken()
-            ?: return@withContext Result.failure(Exception("Google Sign-In required or Drive permission missing."))
+            ?: return@withContext Result.failure(DrivePermissionException("Unable to obtain Google Drive authorization. Please tap 'Authorize' to grant Drive permission."))
 
         try {
             val jsonContent = generateBackupJson()
             
-            // 1. Ensure folder exists
+            // 1. Ensure folder exists (fallback to root if folder cannot be created/found)
             val folderId = getOrCreateFolderId(token)
-                ?: return@withContext Result.failure(IOException("Failed to create or find backup folder in Drive."))
 
             // 2. Upload new backup
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -197,7 +240,9 @@ class GoogleDriveBackupManager(private val context: Context) {
                 put("name", fileName)
                 put("description", "VoltSage Academic Study & Quiz Backup")
                 put("mimeType", "application/json")
-                put("parents", JSONArray().put(folderId))
+                if (folderId != null) {
+                    put("parents", JSONArray().put(folderId))
+                }
             }.toString()
 
             val multipartBody = MultipartBody.Builder()
@@ -215,10 +260,14 @@ class GoogleDriveBackupManager(private val context: Context) {
             val resp = client.newCall(createRequest).execute()
             if (!resp.isSuccessful) {
                 val err = resp.body?.string() ?: resp.message
-                return@withContext Result.failure(IOException("Failed to create Drive backup: $err"))
+                if (resp.code == 401 || resp.code == 403) {
+                    clearCachedToken(token)
+                }
+                val friendlyErr = parseDriveErrorMessage(resp.code, err)
+                return@withContext Result.failure(IOException(friendlyErr))
             }
 
-            // 3. Cleanup old backups
+            // 3. Cleanup old backups (only keep the 5 most recent)
             cleanupOldBackups(token, folderId)
 
             val now = System.currentTimeMillis()
@@ -235,8 +284,15 @@ class GoogleDriveBackupManager(private val context: Context) {
      * Downloads the backup file from Google Drive and restores packs, schedules, and groups.
      */
     suspend fun restoreBackupFromDrive(): Result<String> = withContext(Dispatchers.IO) {
+        val account = getLastSignedInAccount()
+            ?: return@withContext Result.failure(Exception("Google Sign-In required. Please connect your Google account."))
+
+        if (!hasDrivePermission(account)) {
+            return@withContext Result.failure(DrivePermissionException("Google Drive permission required. Please authorize Google Drive access to restore backups."))
+        }
+
         val token = getAuthToken()
-            ?: return@withContext Result.failure(Exception("Google Sign-In required or Drive permission missing."))
+            ?: return@withContext Result.failure(DrivePermissionException("Unable to obtain Google Drive authorization. Please tap 'Authorize' to grant Drive permission."))
 
         try {
             val fileId = findLatestBackupFileId(token)
@@ -250,7 +306,12 @@ class GoogleDriveBackupManager(private val context: Context) {
 
             val resp = client.newCall(downloadRequest).execute()
             if (!resp.isSuccessful) {
-                return@withContext Result.failure(IOException("Failed to download backup: ${resp.message}"))
+                val err = resp.body?.string() ?: resp.message
+                if (resp.code == 401 || resp.code == 403) {
+                    clearCachedToken(token)
+                }
+                val friendlyErr = parseDriveErrorMessage(resp.code, err)
+                return@withContext Result.failure(IOException(friendlyErr))
             }
 
             val body = resp.body?.string() ?: return@withContext Result.failure(IOException("Backup file was empty."))
@@ -366,7 +427,7 @@ class GoogleDriveBackupManager(private val context: Context) {
 
     private suspend fun getOrCreateFolderId(token: String): String? = withContext(Dispatchers.IO) {
         val query = "name = '$BACKUP_FOLDER_NAME' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&fields=files(id)"
+        val url = "https://www.googleapis.com/drive/v3/files?q=${encodeQueryParam(query)}&fields=files(id,name)"
         
         val req = Request.Builder()
             .url(url)
@@ -376,12 +437,19 @@ class GoogleDriveBackupManager(private val context: Context) {
             
         try {
             val resp = client.newCall(req).execute()
-            if (resp.isSuccessful) {
-                val body = resp.body?.string() ?: return@withContext null
+            val body = resp.body?.string()
+            if (resp.isSuccessful && !body.isNullOrEmpty()) {
                 val json = JSONObject(body)
                 val files = json.optJSONArray("files")
                 if (files != null && files.length() > 0) {
-                    return@withContext files.getJSONObject(0).getString("id")
+                    val existingId = files.getJSONObject(0).getString("id")
+                    Log.d(TAG, "Found existing backup folder in Drive: $existingId")
+                    return@withContext existingId
+                }
+            } else {
+                Log.w(TAG, "Search backup folder in Drive failed: HTTP ${resp.code}: $body")
+                if (resp.code == 401 || resp.code == 403) {
+                    clearCachedToken(token)
                 }
             }
         } catch (e: Exception) {
@@ -402,9 +470,16 @@ class GoogleDriveBackupManager(private val context: Context) {
             
         try {
             val createResp = client.newCall(createReq).execute()
-            if (createResp.isSuccessful) {
-                val body = createResp.body?.string() ?: return@withContext null
-                return@withContext JSONObject(body).getString("id")
+            val body = createResp.body?.string()
+            if (createResp.isSuccessful && !body.isNullOrEmpty()) {
+                val newId = JSONObject(body).getString("id")
+                Log.d(TAG, "Created backup folder in Drive: $newId")
+                return@withContext newId
+            } else {
+                Log.w(TAG, "Failed creating backup folder in Drive: HTTP ${createResp.code}: $body")
+                if (createResp.code == 401 || createResp.code == 403) {
+                    clearCachedToken(token)
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed creating backup folder in Drive", e)
@@ -412,9 +487,15 @@ class GoogleDriveBackupManager(private val context: Context) {
         null
     }
 
-    private suspend fun cleanupOldBackups(token: String, folderId: String) = withContext(Dispatchers.IO) {
-        val query = "'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&orderBy=createdTime&fields=files(id,createdTime)"
+    private suspend fun cleanupOldBackups(token: String, folderId: String?) = withContext(Dispatchers.IO) {
+        val query = if (folderId != null) {
+            "'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
+        } else {
+            "name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
+        }
+        val encodedQuery = encodeQueryParam(query)
+        val encodedOrder = encodeQueryParam("createdTime")
+        val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&orderBy=$encodedOrder&fields=files(id,createdTime)"
         
         val req = Request.Builder()
             .url(url)
@@ -447,28 +528,37 @@ class GoogleDriveBackupManager(private val context: Context) {
     }
 
     private suspend fun findLatestBackupFileId(token: String): String? = withContext(Dispatchers.IO) {
-        val folderId = getOrCreateFolderId(token) ?: return@withContext null
-        val query = "'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${java.net.URLEncoder.encode(query, "UTF-8")}&orderBy=createdTime desc&fields=files(id,name)"
-        
-        val req = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $token")
-            .get()
-            .build()
+        val folderId = getOrCreateFolderId(token)
+        val queries = mutableListOf<String>()
+        if (folderId != null) {
+            queries.add("'$folderId' in parents and name contains '$BACKUP_FILENAME_PREFIX' and trashed = false")
+        }
+        queries.add("name contains '$BACKUP_FILENAME_PREFIX' and trashed = false")
+
+        for (query in queries) {
+            val encodedQuery = encodeQueryParam(query)
+            val encodedOrder = encodeQueryParam("createdTime desc")
+            val url = "https://www.googleapis.com/drive/v3/files?q=$encodedQuery&orderBy=$encodedOrder&fields=files(id,name)"
             
-        try {
-            val resp = client.newCall(req).execute()
-            if (resp.isSuccessful) {
-                val body = resp.body?.string() ?: return@withContext null
-                val json = JSONObject(body)
-                val files = json.optJSONArray("files")
-                if (files != null && files.length() > 0) {
-                    return@withContext files.getJSONObject(0).getString("id")
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .get()
+                .build()
+                
+            try {
+                val resp = client.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: continue
+                    val json = JSONObject(body)
+                    val files = json.optJSONArray("files")
+                    if (files != null && files.length() > 0) {
+                        return@withContext files.getJSONObject(0).getString("id")
+                    }
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed finding backup file with query: $query", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed finding latest backup file in Drive", e)
         }
         null
     }

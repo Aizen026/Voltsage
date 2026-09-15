@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -72,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aizen.voltsage.data.remote.DriveAccountInfo
+import com.aizen.voltsage.data.remote.DrivePermissionException
 import com.aizen.voltsage.ui.VoltSageViewModel
 import com.aizen.voltsage.ui.theme.SuccessGreen
 import com.aizen.voltsage.ui.theme.VoltAmber
@@ -152,18 +155,25 @@ fun GoogleDriveAccountDialog(
         try {
             val account = task.getResult(ApiException::class.java)
             accountInfo = driveManager.getAccountInfo()
-            statusMessage = "Signed in as ${account.email}. Starting auto-backup..."
+            val hasDrive = driveManager.hasDrivePermission(account)
+            statusMessage = if (hasDrive) {
+                "Signed in as ${account.email}. Starting auto-backup..."
+            } else {
+                "Signed in as ${account.email}. Tap 'Authorize' to grant Google Drive backup permission."
+            }
             
-            // Automatically trigger a backup after signing in
-            scope.launch {
-                isBackingUp = true
-                val res = driveManager.uploadBackupToDrive()
-                isBackingUp = false
-                res.onSuccess {
-                    accountInfo = driveManager.getAccountInfo()
-                    statusMessage = "Auto-backup complete: $it"
-                }.onFailure {
-                    statusMessage = "Auto-backup failed: ${it.localizedMessage}"
+            if (hasDrive) {
+                // Automatically trigger a backup after signing in with drive permission
+                scope.launch {
+                    isBackingUp = true
+                    val res = driveManager.uploadBackupToDrive()
+                    isBackingUp = false
+                    res.onSuccess {
+                        accountInfo = driveManager.getAccountInfo()
+                        statusMessage = "Auto-backup complete: $it"
+                    }.onFailure {
+                        statusMessage = "Auto-backup failed: ${it.localizedMessage}"
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -322,6 +332,46 @@ fun GoogleDriveAccountDialog(
                                 }
                             }
 
+                            if (!accountInfo.hasDrivePermission) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    color = VoltAmber.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, VoltAmber.copy(alpha = 0.35f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = VoltAmber,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Drive permission needed for cloud backups",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Button(
+                                            onClick = {
+                                                val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
+                                                signInLauncher.launch(client.signInIntent)
+                                            },
+                                            shape = RoundedCornerShape(6.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = VoltAmber)
+                                        ) {
+                                            Text("Authorize", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
                             if (accountInfo.lastBackupTimestamp > 0L) {
                                 Spacer(modifier = Modifier.height(10.dp))
                                 val formattedDate = SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.getDefault())
@@ -410,6 +460,12 @@ fun GoogleDriveAccountDialog(
                     ) {
                         Button(
                             onClick = {
+                                if (!accountInfo.hasDrivePermission) {
+                                    statusMessage = "Requesting Google Drive permission..."
+                                    val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
+                                    signInLauncher.launch(client.signInIntent)
+                                    return@Button
+                                }
                                 scope.launch {
                                     isBackingUp = true
                                     statusMessage = "Uploading backup to Google Drive..."
@@ -418,8 +474,12 @@ fun GoogleDriveAccountDialog(
                                     res.onSuccess {
                                         accountInfo = driveManager.getAccountInfo()
                                         statusMessage = it
-                                    }.onFailure {
-                                        statusMessage = "Drive upload error: ${it.localizedMessage}"
+                                    }.onFailure { err ->
+                                        if (err is DrivePermissionException) {
+                                            val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
+                                            signInLauncher.launch(client.signInIntent)
+                                        }
+                                        statusMessage = "Drive upload error: ${err.localizedMessage}"
                                     }
                                 }
                             },
@@ -442,7 +502,15 @@ fun GoogleDriveAccountDialog(
                         }
 
                         OutlinedButton(
-                            onClick = { showRestoreConfirm = true },
+                            onClick = {
+                                if (!accountInfo.hasDrivePermission) {
+                                    statusMessage = "Requesting Google Drive permission..."
+                                    val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
+                                    signInLauncher.launch(client.signInIntent)
+                                    return@OutlinedButton
+                                }
+                                showRestoreConfirm = true
+                            },
                             enabled = !isBackingUp && !isRestoring,
                             modifier = Modifier
                                 .weight(1f)
@@ -769,7 +837,7 @@ fun GoogleSignInStartDialog(
                     onClick = {
                         isSigningIn = true
                         errorMessage = null
-                        val client = driveManager.getGoogleSignInClient(requestDriveScope = false)
+                        val client = driveManager.getGoogleSignInClient(requestDriveScope = true)
                         signInLauncher.launch(client.signInIntent)
                     },
                     enabled = !isSigningIn,
